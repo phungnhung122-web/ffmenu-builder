@@ -1,0 +1,58 @@
+name: Build IPA for TrollStore
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+          
+      - name: Install Dependencies
+        run: |
+          brew install ldid dpkg
+          
+      - name: Build Package
+        run: |
+          make package FINALPACKAGE=1
+          
+      - name: Convert DEB to IPA
+        run: |
+          DEB_FILE=$(ls packages/*.deb)
+          mkdir -p Payload/FFMenu.app
+          dpkg-deb -R $DEB_FILE extracted/
+          cp extracted/Library/MobileSubstrate/DynamicLibraries/*.dylib Payload/FFMenu.app/ffmenu.dylib 2>/dev/null || true
+          echo '<?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>ffmenu</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.ffmenu.hack</string>
+              <key>CFBundleName</key>
+              <string>FFMenu</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+          </dict>
+          </plist>' > Payload/FFMenu.app/Info.plist
+          echo '#!/bin/bash' > Payload/FFMenu.app/ffmenu
+          chmod +x Payload/FFMenu.app/ffmenu
+          cd Payload && zip -r ../FFMenu.ipa . && cd ..
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFMenu-IPA
+          path: FFMenu.ipa
